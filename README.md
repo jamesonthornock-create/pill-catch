@@ -1,2 +1,2 @@
 # pill-catch
-Catch the Pills in the Bottole
+Catch the Pills in the Bottle !!
