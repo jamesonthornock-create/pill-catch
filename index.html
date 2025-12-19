@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Pill Catch</title>
+    <style>
+        body { margin: 0; background: #fce4ec; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; font-family: 'Arial Black', sans-serif; }
+        
+        #game-box {
+            position: relative; width: 400px; height: 600px;
+            background: white; border: 6px solid #f8bbd0; border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1); overflow: hidden;
+        }
+
+        canvas { display: block; background: #fff; }
+
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #fce4ec; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 100; text-align: center;
+        }
+
+        #ui { position: absolute; top: 15px; width: 100%; text-align: center; color: #ad1457; font-weight: 900; z-index: 10; font-size: 20px; }
+
+        button {
+            padding: 20px 50px; font-size: 24px; cursor: pointer; font-weight: 900;
+            background: #d81b60; color: white; border: none; border-radius: 50px;
+            text-transform: uppercase; box-shadow: 0 4px 15px rgba(216, 27, 96, 0.3);
+        }
+        
+        button:hover { background: #ad1457; transform: scale(1.05); }
+    </style>
+</head>
+<body>
+
+    <div id="game-box">
+        <div id="ui">SCORE: <span id="scoreVal">0</span></div>
+        
+        <div id="overlay">
+            <h1 id="statusTitle" style="color:#ad1457; font-size: 40px; margin: 0;">PILL CATCH</h1>
+            <p id="statusMsg" style="color:#ad1457; font-weight:900; margin: 20px; text-transform: uppercase;">CATCH WHITE PILLS.<br>AVOID INJECTOR PENS!</p>
+            <button onclick="pressStart()">START GAME</button>
+        </div>
+
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const scoreVal = document.getElementById('scoreVal');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusMsg = document.getElementById('statusMsg');
+
+    let gameActive = false;
+    let score = 0;
+    let objects = [];
+    let bottle = { x: 165, y: 490, w: 70, h: 90 };
+    let audioCtx = null;
+
+    // --- AUDIO SYSTEM ---
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    function playSound(freq, type, duration) {
+        if (!audioCtx || audioCtx.state === 'suspended') return;
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + duration);
+        } catch(e) { console.log("Audio play failed"); }
+    }
+
+    // Movement
+    window.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        bottle.x = (e.clientX - rect.left) - (bottle.w / 2);
+        if (bottle.x < 0) bottle.x = 0;
+        if (bottle.x > 400 - bottle.w) bottle.x = 400 - bottle.w;
+    });
+
+    function pressStart() {
+        initAudio(); // Initialize audio context on click
+        overlay.style.display = 'none';
+        gameActive = true;
+        score = 0;
+        objects = [];
+        scoreVal.innerText = "0";
+        spawn();
+        loop();
+    }
+
+    function spawn() {
+        if (!gameActive) return;
+        const isPen = Math.random() < 0.35;
+        objects.push({
+            x: Math.random() * 340 + 30,
+            y: -80,
+            type: isPen ? 'pen' : 'pill',
+            speed: 3.5 + (score * 0.08),
+            angle: 0,
+            spin: (Math.random() - 0.5) * 0.1
+        });
+        setTimeout(spawn, Math.max(300, 1000 - (score * 10)));
+    }
+
+    function loop() {
+        if (!gameActive) return;
+        ctx.clearRect(0, 0, 400, 600);
+
+        // --- DRAW BOTTLE ---
+        ctx.fillStyle = "white";
+        ctx.strokeStyle = "#203769"; // Navy Outline
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(bottle.x, bottle.y, bottle.w, bottle.h, 12);
+        ctx.fill(); ctx.stroke();
+        
+        // Pink Stripe (Label)
+        ctx.fillStyle = "#f8bbd0";
+        ctx.fillRect(bottle.x + 3, bottle.y + 25, bottle.w - 6, 35);
+
+        // Navy Cap
+        ctx.fillStyle = "#203769";
+        ctx.fillRect(bottle.x + 10, bottle.y - 12, bottle.w - 20, 12);
+
+        // --- DRAW ITEMS ---
+        for (let i = objects.length - 1; i >= 0; i--) {
+            let o = objects[i];
+            o.y += o.speed;
+
+            if (o.type === 'pill') {
+                // White Pill with Navy Outline
+                ctx.fillStyle = "white"; ctx.strokeStyle = "#203769";
+                ctx.lineWidth = 2.5;
+                ctx.beginPath(); ctx.arc(o.x, o.y, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            } else {
+                // Two-tone Injector Pen
+                o.angle += o.spin;
+                ctx.save();
+                ctx.translate(o.x, o.y);
+                ctx.rotate(o.angle);
+                
+                ctx.fillStyle = "#E6553F"; // Primary Red-Orange
+                ctx.beginPath(); ctx.roundRect(-7, -30, 14, 60, 4); ctx.fill();
+                
+                ctx.fillStyle = "#ff8a75"; // Lighter Orange Cap
+                ctx.fillRect(-7, -30, 14, 15);
+                
+                ctx.fillStyle = "white"; // Window
+                ctx.fillRect(-3, 5, 6, 10);
+                ctx.restore();
+            }
+
+            // Collision
+            if (o.y + 20 > bottle.y && o.x > bottle.x && o.x < bottle.x + bottle.w) {
+                if (o.type === 'pen') {
+                    playSound(150, 'sawtooth', 0.4); // Fail sound
+                    endGame("CAUGHT A PEN!");
+                } else {
+                    objects.splice(i, 1);
+                    score++;
+                    scoreVal.innerText = score;
+                    playSound(500 + (score * 10), 'triangle', 0.1); // Success sound
+                }
+            } else if (o.y > 600) {
+                if (o.type === 'pill') {
+                    playSound(100, 'sine', 0.3); // Miss sound
+                    endGame("PILL MISSED!");
+                } else {
+                    objects.splice(i, 1);
+                }
+            }
+        }
+        requestAnimationFrame(loop);
+    }
+
+    function endGame(msg) {
+        gameActive = false;
+        overlay.style.display = 'flex';
+        statusTitle.innerText = "GAME OVER";
+        statusMsg.innerText = msg + "\nSCORE: " + score;
+    }
+</script>
+</body>
+</html>
